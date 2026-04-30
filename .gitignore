@@ -1,0 +1,7 @@
+.claude/
+.pytest_cache/
+.venv/
+__pycache__/
+*.py[cod]
+dist/
+2026-05-01-standalone-python-cli-uv-tool-plan.md
