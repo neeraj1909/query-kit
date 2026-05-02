@@ -1,6 +1,6 @@
 import httpx
 
-from query_cli.adapters.arxiv import ArxivProvider, parse_arxiv_feed
+from query_cli.adapters.arxiv import ArxivProvider, build_arxiv_query, parse_arxiv_feed
 from query_cli.domain import SearchQuery
 
 
@@ -56,6 +56,16 @@ def test_arxiv_provider_requests_public_api():
     results = provider.search(SearchQuery(text="explainable NLP", limit=5))
 
     assert seen["url"] == (
-        "https://export.arxiv.org/api/query?search_query=all%3Aexplainable+NLP&start=0&max_results=5"
+        "https://export.arxiv.org/api/query?search_query=all%3Aexplainable+AND+all%3ANLP&start=0&max_results=5"
+        "&sortBy=lastUpdatedDate&sortOrder=descending"
     )
     assert len(results) == 2
+
+
+def test_arxiv_query_adds_submitted_date_filter_for_since_year():
+    query = SearchQuery(text="explainable NLP", since_year=2024, limit=5)
+
+    assert (
+        build_arxiv_query(query)
+        == "all:explainable AND all:NLP AND submittedDate:[202401010000 TO *]"
+    )

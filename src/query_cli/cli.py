@@ -15,6 +15,7 @@ from .domain.errors import ProviderSearchError, SearchError, SearchNetworkError
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_NETWORK = 2
+PROVIDER_CHOICES = ("acl", "arxiv", "pubmed", "semantic-scholar", "openreview", "all")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,11 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--provider",
         action="append",
-        choices=("acl", "arxiv", "all"),
+        choices=PROVIDER_CHOICES,
         default=None,
         help="research website provider; repeatable; defaults to acl",
     )
-    search.add_argument("--limit", type=int, default=10, help="maximum number of results")
+    search.add_argument(
+        "--limit", type=int, default=10, help="maximum number of results"
+    )
+    search.add_argument(
+        "--since-year",
+        type=int,
+        default=None,
+        help="only return results from this year or newer",
+    )
     search.add_argument(
         "--timeout",
         help="request timeout in seconds; defaults to QUERY_CLI_TIMEOUT or 30",
@@ -51,7 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="output format",
     )
-    search.add_argument("--verbose", action="store_true", help="print diagnostic details to stderr")
+    search.add_argument(
+        "--verbose", action="store_true", help="print diagnostic details to stderr"
+    )
     return parser
 
 
@@ -87,11 +98,13 @@ def run_search(
     try:
         timeout = resolve_timeout(args.timeout, environ.get("QUERY_CLI_TIMEOUT"))
         provider_ids = args.provider or ["acl"]
-        providers = get_search_providers(provider_ids, timeout=timeout)
+        providers = get_search_providers(provider_ids, timeout=timeout, environ=environ)
         if args.verbose:
             providers_text = ", ".join(provider.provider_id for provider in providers)
             print(f"searching providers: {providers_text}", file=stderr)
-        results = search_research(args.query, providers, limit=args.limit)
+        results = search_research(
+            args.query, providers, limit=args.limit, since_year=args.since_year
+        )
     except ValueError as exc:
         print(f"error: {exc}", file=stderr)
         return EXIT_USAGE
@@ -115,7 +128,10 @@ def run_search(
         print(f"results returned: {len(results)}", file=stderr)
 
     if args.format == "json":
-        print(json.dumps([result.to_dict() for result in results], ensure_ascii=False), file=stdout)
+        print(
+            json.dumps([result.to_dict() for result in results], ensure_ascii=False),
+            file=stdout,
+        )
     else:
         print(format_search_results(results), file=stdout)
     return EXIT_SUCCESS

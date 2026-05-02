@@ -2,7 +2,7 @@ from io import StringIO
 
 import pytest
 
-from query_cli.cli import EXIT_NETWORK, EXIT_SUCCESS, EXIT_USAGE, resolve_timeout, run
+from query_cli.cli import EXIT_NETWORK, EXIT_SUCCESS, resolve_timeout, run
 from query_cli.domain.errors import SearchNetworkError
 
 
@@ -13,9 +13,18 @@ def test_run_search_defaults_to_acl_and_prints_results(monkeypatch):
         provider_id = "acl"
 
         def search(self, query):
-            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="ACL Anthology",
+                )
+            ]
 
-    monkeypatch.setattr("query_cli.cli.get_search_providers", lambda provider_ids, timeout: [FakeProvider()])
+    monkeypatch.setattr(
+        "query_cli.cli.get_search_providers",
+        lambda provider_ids, timeout, environ=None: [FakeProvider()],
+    )
     stdout = StringIO()
     stderr = StringIO()
     code = run(
@@ -39,9 +48,15 @@ def test_run_search_accepts_repeated_providers(monkeypatch):
         provider_id = "acl"
 
         def search(self, query):
-            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="ACL Anthology",
+                )
+            ]
 
-    def fake_get_search_providers(provider_ids, timeout):
+    def fake_get_search_providers(provider_ids, timeout, environ=None):
         seen["provider_ids"] = provider_ids
         return [FakeProvider()]
 
@@ -67,9 +82,18 @@ def test_run_search_prints_json(monkeypatch):
         provider_id = "acl"
 
         def search(self, query):
-            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="ACL Anthology",
+                )
+            ]
 
-    monkeypatch.setattr("query_cli.cli.get_search_providers", lambda provider_ids, timeout: [FakeProvider()])
+    monkeypatch.setattr(
+        "query_cli.cli.get_search_providers",
+        lambda provider_ids, timeout, environ=None: [FakeProvider()],
+    )
     stdout = StringIO()
     stderr = StringIO()
     code = run(
@@ -91,7 +115,10 @@ def test_run_search_reports_network_errors(monkeypatch):
         def search(self, query):
             raise SearchNetworkError("offline")
 
-    monkeypatch.setattr("query_cli.cli.get_search_providers", lambda provider_ids, timeout: [FakeProvider()])
+    monkeypatch.setattr(
+        "query_cli.cli.get_search_providers",
+        lambda provider_ids, timeout, environ=None: [FakeProvider()],
+    )
     stdout = StringIO()
     stderr = StringIO()
     code = run(
@@ -113,9 +140,18 @@ def test_run_search_verbose_prints_provider_diagnostics(monkeypatch):
         provider_id = "acl"
 
         def search(self, query):
-            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="ACL Anthology",
+                )
+            ]
 
-    monkeypatch.setattr("query_cli.cli.get_search_providers", lambda provider_ids, timeout: [FakeProvider()])
+    monkeypatch.setattr(
+        "query_cli.cli.get_search_providers",
+        lambda provider_ids, timeout, environ=None: [FakeProvider()],
+    )
     stdout = StringIO()
     stderr = StringIO()
     code = run(
@@ -140,3 +176,75 @@ def test_resolve_timeout_defaults_and_env():
 def test_resolve_timeout_requires_positive_value(value):
     with pytest.raises(ValueError, match="greater than 0"):
         resolve_timeout(value, None)
+
+
+def test_run_search_passes_since_year(monkeypatch):
+    from query_cli.domain import SearchResult
+
+    seen = {}
+
+    class FakeProvider:
+        provider_id = "acl"
+
+        def search(self, query):
+            seen["since_year"] = query.since_year
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="ACL Anthology",
+                )
+            ]
+
+    monkeypatch.setattr(
+        "query_cli.cli.get_search_providers",
+        lambda provider_ids, timeout, environ=None: [FakeProvider()],
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+    code = run(
+        ["search", "xai driven nlp", "--since-year", "2025"],
+        stdout=stdout,
+        stderr=stderr,
+        environ={},
+    )
+
+    assert code == EXIT_SUCCESS
+    assert seen["since_year"] == 2025
+
+
+def test_run_search_passes_environment_to_provider_registry(monkeypatch):
+    from query_cli.domain import SearchResult
+
+    seen = {}
+
+    class FakeProvider:
+        provider_id = "pubmed"
+
+        def search(self, query):
+            return [
+                SearchResult(
+                    title="Paper title",
+                    url="https://example.test/paper",
+                    source="PubMed",
+                )
+            ]
+
+    def fake_get_search_providers(provider_ids, timeout, environ=None):
+        seen["environ"] = environ
+        return [FakeProvider()]
+
+    monkeypatch.setattr("query_cli.cli.get_search_providers", fake_get_search_providers)
+    stdout = StringIO()
+    stderr = StringIO()
+    env = {"QUERY_CLI_NCBI_API_KEY": "secret-key"}
+
+    code = run(
+        ["search", "xai driven nlp", "--provider", "pubmed"],
+        stdout=stdout,
+        stderr=stderr,
+        environ=env,
+    )
+
+    assert code == EXIT_SUCCESS
+    assert seen["environ"] is env

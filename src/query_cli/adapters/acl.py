@@ -7,7 +7,12 @@ from urllib.parse import urljoin
 
 import httpx
 
+from query_cli.adapters.http import ProviderHttpClient, ensure_success
 from query_cli.domain import SearchQuery, SearchResult
+from query_cli.domain.errors import ProviderParseError
+
+ACL_BIBTEX_WITH_ABSTRACTS = "anthology+abstracts.bib.gz"
+ACL_BIBTEX_FALLBACK = "anthology.bib.gz"
 
 
 class AclAnthologyProvider:
@@ -19,25 +24,31 @@ class AclAnthologyProvider:
         base_url: str = "https://aclanthology.org/",
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        retries: int = 1,
     ) -> None:
-        self.base_url = base_url
-        self.timeout = timeout
-        self.transport = transport
+        self.http = ProviderHttpClient(
+            provider_id=self.provider_id,
+            base_url=base_url,
+            timeout=timeout,
+            transport=transport,
+            retries=retries,
+        )
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
-        try:
-            with httpx.Client(timeout=self.timeout, transport=self.transport, follow_redirects=True) as client:
-                response = client.get(urljoin(self.base_url, "anthology.bib.gz"))
-            response.raise_for_status()
-        except httpx.RequestError as exc:
-            from query_cli.domain.errors import SearchNetworkError
-
-            raise SearchNetworkError(str(exc)) from exc
+        response = self.http.get(ACL_BIBTEX_WITH_ABSTRACTS)
+        if response.status_code == 404:
+            response = self.http.get(ACL_BIBTEX_FALLBACK)
+        ensure_success(response)
         return search_acl_bibtex(response.content, query=query, limit=query.limit)
 
 
-def search_acl_bibtex(content: bytes, *, query: SearchQuery, limit: int) -> list[SearchResult]:
-    text = gzip.decompress(content).decode("utf-8", errors="replace")
+def search_acl_bibtex(
+    content: bytes, *, query: SearchQuery, limit: int
+) -> list[SearchResult]:
+    try:
+        text = gzip.decompress(content).decode("utf-8", errors="replace")
+    except OSError as exc:
+        raise ProviderParseError("invalid ACL BibTeX gzip response") from exc
     terms = [term.casefold() for term in query.text.split() if term.strip()]
     results = []
     for entry in iter_bib_entries(text):
@@ -47,14 +58,20 @@ def search_acl_bibtex(content: bytes, *, query: SearchQuery, limit: int) -> list
         if terms and not all(term in haystack for term in terms):
             continue
         year = parse_year(clean_bib_value(entry.get("year", "")))
-        if query.since_year is not None and year is not None and year < query.since_year:
+        if (
+            query.since_year is not None
+            and year is not None
+            and year < query.since_year
+        ):
             continue
         url = clean_bib_value(entry.get("url", ""))
         if not url:
             continue
         authors = tuple(
             author.strip()
-            for author in clean_bib_value(entry.get("author", "")).replace("\n", " ").split(" and ")
+            for author in clean_bib_value(entry.get("author", ""))
+            .replace("\n", " ")
+            .split(" and ")
             if author.strip()
         )
         results.append(
@@ -78,7 +95,13 @@ def iter_bib_entries(text: str):
         if not chunk.strip() or chunk.lstrip().startswith("%"):
             continue
         body = "@" + chunk if not chunk.startswith("@") else chunk
-        yield dict(re.findall(r"\n\s*([A-Za-z]+)\s*=\s*[\{\"](.*?)[\}\"],?\s*(?=\n\s*[A-Za-z]+\s*=|\n\})", body, re.DOTALL))
+        yield dict(
+            re.findall(
+                r"\n\s*([A-Za-z]+)\s*=\s*[\{\"](.*?)[\}\"],?\s*(?=\n\s*[A-Za-z]+\s*=|\n\})",
+                body,
+                re.DOTALL,
+            )
+        )
 
 
 def clean_bib_value(value: str) -> str:
@@ -154,9 +177,13 @@ def looks_like_paper_href(href: str) -> bool:
     clean = href.strip("/")
     if not clean or "/" in clean:
         return False
-    if clean.startswith(("anthology", "events", "volumes", "people", "search", "info", "posts")):
+    if clean.startswith(
+        ("anthology", "events", "volumes", "people", "search", "info", "posts")
+    ):
         return False
-    return any(char.isdigit() for char in clean) and any(char.isalpha() for char in clean)
+    return any(char.isdigit() for char in clean) and any(
+        char.isalpha() for char in clean
+    )
 
 
 def should_skip_title(title: str) -> bool:

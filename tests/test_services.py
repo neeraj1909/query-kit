@@ -18,12 +18,29 @@ class FakeProvider:
 
 
 def test_search_research_deduplicates_and_applies_global_limit():
-    duplicate = SearchResult(title="Same Paper", url="https://example.test/paper", source="A")
+    duplicate = SearchResult(
+        title="Same Paper", url="https://example.test/paper", source="A"
+    )
     results = search_research(
         "xai nlp",
         [
-            FakeProvider("a", [duplicate, SearchResult(title="Second", url="https://example.test/2", source="A")]),
-            FakeProvider("b", [SearchResult(title="Same Paper", url="https://example.test/paper", source="B")]),
+            FakeProvider(
+                "a",
+                [
+                    duplicate,
+                    SearchResult(
+                        title="Second", url="https://example.test/2", source="A"
+                    ),
+                ],
+            ),
+            FakeProvider(
+                "b",
+                [
+                    SearchResult(
+                        title="Same Paper", url="https://example.test/paper", source="B"
+                    )
+                ],
+            ),
         ],
         limit=2,
     )
@@ -36,12 +53,44 @@ def test_search_research_continues_when_one_provider_fails():
         "xai nlp",
         [
             FakeProvider("broken", error=RuntimeError("offline")),
-            FakeProvider("ok", [SearchResult(title="Paper", url="https://example.test/paper", source="OK")]),
+            FakeProvider(
+                "ok",
+                [
+                    SearchResult(
+                        title="Paper", url="https://example.test/paper", source="OK"
+                    )
+                ],
+            ),
         ],
         limit=5,
     )
 
     assert [result.title for result in results] == ["Paper"]
+
+
+def test_search_research_round_robins_provider_results_before_limit():
+    results = search_research(
+        "xai nlp",
+        [
+            FakeProvider(
+                "a",
+                [
+                    SearchResult(title="A1", url="https://example.test/a1", source="A"),
+                    SearchResult(title="A2", url="https://example.test/a2", source="A"),
+                ],
+            ),
+            FakeProvider(
+                "b",
+                [
+                    SearchResult(title="B1", url="https://example.test/b1", source="B"),
+                    SearchResult(title="B2", url="https://example.test/b2", source="B"),
+                ],
+            ),
+        ],
+        limit=3,
+    )
+
+    assert [result.title for result in results] == ["A1", "B1", "A2"]
 
 
 def test_search_research_raises_when_all_providers_fail():

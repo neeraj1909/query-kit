@@ -15,6 +15,8 @@ class SearchQuery:
             raise ValueError("query text is required")
         if self.limit <= 0:
             raise ValueError("limit must be greater than 0")
+        if self.since_year is not None and self.since_year <= 0:
+            raise ValueError("since-year must be greater than 0")
 
 
 @dataclass(frozen=True)
@@ -58,4 +60,6 @@ def normalize_title(title: str) -> str:
 
 def normalize_url(url: str) -> str:
     parts = urlsplit(url.strip())
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), "", ""))
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), "", "")
+    )

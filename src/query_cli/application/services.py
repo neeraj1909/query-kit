@@ -15,8 +15,7 @@ def search_research(
     since_year: int | None = None,
 ) -> list[SearchResult]:
     query = SearchQuery(text=query_text, since_year=since_year, limit=limit)
-    results: list[SearchResult] = []
-    seen: set[tuple[str, str]] = set()
+    provider_result_sets: list[list[SearchResult]] = []
 
     failures: list[str] = []
     network_failure = False
@@ -31,14 +30,33 @@ def search_research(
             failures.append(f"{provider.provider_id}: {exc}")
             continue
 
-        for result in provider_results:
+        provider_result_sets.append(provider_results)
+
+    results = merge_provider_results(provider_result_sets, limit=limit)
+    if failures and not results:
+        raise ProviderSearchError(
+            "all", "; ".join(failures), network_failure=network_failure
+        )
+    return results
+
+
+def merge_provider_results(
+    provider_result_sets: Sequence[Sequence[SearchResult]], *, limit: int
+) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    seen: set[tuple[str, str]] = set()
+    max_results = max(
+        (len(provider_results) for provider_results in provider_result_sets), default=0
+    )
+    for index in range(max_results):
+        for provider_results in provider_result_sets:
+            if index >= len(provider_results):
+                continue
+            result = provider_results[index]
             if result.dedupe_key in seen:
                 continue
             seen.add(result.dedupe_key)
             results.append(result)
             if len(results) >= limit:
                 return results
-
-    if failures and not results:
-        raise ProviderSearchError("all", "; ".join(failures), network_failure=network_failure)
     return results

@@ -45,16 +45,40 @@ Search arXiv directly:
 query-cli search "explainable NLP" --provider arxiv --limit 5
 ```
 
+Search PubMed directly:
+
+```bash
+query-cli search "explainable NLP" --provider pubmed --limit 5
+```
+
+Search Semantic Scholar directly:
+
+```bash
+query-cli search "explainable NLP" --provider semantic-scholar --limit 5
+```
+
+Search OpenReview directly:
+
+```bash
+query-cli search "explainable NLP" --provider openreview --limit 5
+```
+
 Search more than one provider by repeating `--provider`:
 
 ```bash
-query-cli search "explainable NLP" --provider acl --provider arxiv --limit 10
+query-cli search "explainable NLP" --provider acl --provider arxiv --provider pubmed --limit 10
 ```
 
 Search all launch-ready providers:
 
 ```bash
 query-cli search "explainable NLP" --provider all --limit 10
+```
+
+Filter by publication year when the provider supports it:
+
+```bash
+query-cli search "explainable NLP" --provider all --since-year 2024 --limit 10
 ```
 
 Return normalized JSON results:
@@ -83,11 +107,14 @@ The CLI passes through these phases:
 
 1. **Parse command**: `argparse` reads the query text, provider names, limit, timeout, format, and verbose flag.
 2. **Resolve configuration**: the CLI resolves `--timeout` or `QUERY_CLI_TIMEOUT`, then defaults to `30` seconds if neither is set.
-3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, or `all` to concrete provider adapters.
-4. **Build domain query**: the application service creates a `SearchQuery` with the keyword text and result limit, then validates that the query is not empty and the limit is positive.
+3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, `pubmed`, `semantic-scholar`, `openreview`, or `all` to concrete provider adapters.
+4. **Build domain query**: the application service creates a `SearchQuery` with the keyword text, optional `--since-year`, and result limit, then validates that the query is not empty and the limit is positive.
 5. **Call provider adapters**: each selected adapter performs provider-specific HTTP and parsing work:
-   - `acl` downloads ACL Anthology's public BibTeX export and matches query terms against paper metadata.
+   - `acl` downloads ACL Anthology's public BibTeX export with abstracts and matches query terms against paper metadata.
    - `arxiv` calls the public arXiv Atom API and parses the XML feed.
+   - `pubmed` calls NCBI E-utilities ESearch and EFetch for PubMed records.
+   - `semantic-scholar` calls the Semantic Scholar Graph API paper search endpoint.
+   - `openreview` calls the OpenReview API 2 notes search endpoint.
 6. **Normalize results**: provider-specific records are converted into shared `SearchResult` objects with fields such as title, URL, source, authors, year, venue, and abstract.
 7. **Merge and deduplicate**: the service merges results from all selected providers, deduplicates by normalized title/link, and applies the global `--limit`.
 8. **Format output**: the CLI prints readable text by default, or normalized JSON when `--format json` is passed.
@@ -98,11 +125,11 @@ Provider failures are isolated. If one provider fails but another returns result
 
 | Provider | Status | Notes |
 | --- | --- | --- |
-| `acl` | Supported | Searches ACL Anthology using its public BibTeX export. Best for NLP and computational linguistics papers. |
-| `arxiv` | Supported | Searches the public arXiv Atom API. Best for broad CS, AI, ML, and NLP preprints. |
-| `semantic-scholar` | Planned | Good candidate for broad academic metadata, but should remain optional and free/public. |
-| `openreview` | Planned | Good candidate for ML conference submissions and reviews. |
-| `pubmed` | Planned | Good candidate for biomedical and clinical NLP queries. |
+| `acl` | Supported | Searches ACL Anthology using its public BibTeX export, preferring the abstracts export and falling back to the plain BibTeX export. Best for NLP and computational linguistics papers. |
+| `arxiv` | Supported | Searches the public arXiv Atom API, sorted by last updated date. Best for broad CS, AI, ML, and NLP preprints. |
+| `pubmed` | Supported | Searches PubMed through NCBI E-utilities. Best for biomedical and clinical NLP queries. |
+| `semantic-scholar` | Supported | Searches Semantic Scholar's official Graph API. Best for broad academic metadata. |
+| `openreview` | Supported | Searches public OpenReview API 2 notes. Best for ML conference and workshop submissions visible through public search. |
 
 ## Provider Notes
 
@@ -111,6 +138,12 @@ Provider failures are isolated. If one provider fails but another returns result
 - Live search results can vary because they come from external websites.
 - `--timeout` applies per provider request.
 - Use `--verbose` to print selected providers and result counts to stderr.
+- `arxiv` enforces a 3-second minimum interval between repeated arXiv API calls in the same process.
+- `pubmed` enforces NCBI's default 3 requests/second limit without an API key and 10 requests/second with an API key.
+- NCBI asks software developers to register a tool name and email with NCBI; passing `QUERY_CLI_NCBI_TOOL` and `QUERY_CLI_NCBI_EMAIL` is not a substitute for registration.
+- `semantic-scholar` may return HTTP 429 without an API key. Set `QUERY_CLI_SEMANTIC_SCHOLAR_API_KEY` if you have one.
+- `openreview` uses API 2 public search. Older API 1 venue-specific retrieval is not implemented in this generic search adapter.
+- The HTTP client only sends a custom User-Agent when `QUERY_CLI_USER_AGENT` is set.
 
 ## Configuration
 
@@ -119,8 +152,26 @@ Flags take precedence over environment variables.
 | Flag | Environment variable | Description |
 | --- | --- | --- |
 | `--timeout` | `QUERY_CLI_TIMEOUT` | Optional request timeout in seconds. Defaults to `30`. |
+| `--since-year` | N/A | Optional publication-year lower bound. Providers apply it through source-specific filters or post-filtering when year metadata is available. |
 | `--format` | N/A | Output format: `text` or `json`. Defaults to `text`. |
 | `--verbose` | N/A | Print request diagnostics to stderr. |
+| N/A | `QUERY_CLI_USER_AGENT` | Optional User-Agent value sent with provider HTTP requests. |
+| N/A | `QUERY_CLI_NCBI_API_KEY` | Optional NCBI API key for PubMed E-utilities. Raises the default NCBI limit from 3 requests/second to 10 requests/second. |
+| N/A | `QUERY_CLI_NCBI_TOOL` | Optional NCBI tool parameter. Register this value with NCBI for production use. |
+| N/A | `QUERY_CLI_NCBI_EMAIL` | Optional NCBI email parameter. Register this value with NCBI for production use. |
+| N/A | `QUERY_CLI_SEMANTIC_SCHOLAR_API_KEY` | Optional Semantic Scholar API key. |
+
+## Live Smoke Checks
+
+Normal tests use mocked HTTP responses. After installing the CLI, you can run live smoke checks manually:
+
+```bash
+query-cli search "explainable nlp" --provider arxiv --limit 2 --format json
+query-cli search "explainable nlp" --provider pubmed --limit 2 --format json
+query-cli search "explainable nlp" --provider semantic-scholar --limit 2 --format json
+query-cli search "explainable nlp" --provider openreview --limit 2 --format json
+query-cli search "explainable nlp" --provider all --limit 10 --format json
+```
 
 ## Adding More Providers
 
