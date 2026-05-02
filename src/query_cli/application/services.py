@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from query_cli.application.ports import SearchProvider
 from query_cli.domain import SearchQuery, SearchResult
-from query_cli.domain.errors import ProviderSearchError
+from query_cli.domain.errors import ProviderSearchError, SearchNetworkError
 
 
 def search_research(
@@ -19,9 +19,14 @@ def search_research(
     seen: set[tuple[str, str]] = set()
 
     failures: list[str] = []
+    network_failure = False
     for provider in providers:
         try:
             provider_results = provider.search(query)
+        except SearchNetworkError as exc:
+            failures.append(f"{provider.provider_id}: {exc}")
+            network_failure = True
+            continue
         except Exception as exc:
             failures.append(f"{provider.provider_id}: {exc}")
             continue
@@ -35,5 +40,5 @@ def search_research(
                 return results
 
     if failures and not results:
-        raise ProviderSearchError("all", "; ".join(failures))
+        raise ProviderSearchError("all", "; ".join(failures), network_failure=network_failure)
     return results

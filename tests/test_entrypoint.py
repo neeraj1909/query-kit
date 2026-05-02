@@ -12,4 +12,5 @@ def test_module_help_exits_successfully():
 
     assert completed.returncode == 0
     assert "query-cli" in completed.stdout
-    assert "ask" in completed.stdout
+    assert "search" in completed.stdout
+    assert "ask" not in completed.stdout

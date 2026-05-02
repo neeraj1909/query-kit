@@ -30,9 +30,9 @@ class AclAnthologyProvider:
                 response = client.get(urljoin(self.base_url, "anthology.bib.gz"))
             response.raise_for_status()
         except httpx.RequestError as exc:
-            from query_cli.client import QueryNetworkError
+            from query_cli.domain.errors import SearchNetworkError
 
-            raise QueryNetworkError(str(exc)) from exc
+            raise SearchNetworkError(str(exc)) from exc
         return search_acl_bibtex(response.content, query=query, limit=query.limit)
 
 

@@ -4,8 +4,8 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
-from query_cli.client import QueryNetworkError
 from query_cli.domain import SearchQuery, SearchResult
+from query_cli.domain.errors import SearchNetworkError
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
@@ -35,7 +35,7 @@ class ArxivProvider:
                 response = client.get(self.base_url, params=params)
             response.raise_for_status()
         except httpx.RequestError as exc:
-            raise QueryNetworkError(str(exc)) from exc
+            raise SearchNetworkError(str(exc)) from exc
         return parse_arxiv_feed(response.text, limit=query.limit)
 
 

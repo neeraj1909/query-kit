@@ -1,14 +1,13 @@
 # Query CLI
 
-A small, independent Python CLI for submitting queries to any HTTP service that implements a simple `/query` endpoint.
+A small, independent Python CLI for searching public research sources from the shell.
 
-It is provider-agnostic: it does not require a paid API, cloud account, hosted LLM, or project-specific backend. You can use it with any self-hosted, open-source, local, or internal service that accepts the documented request shape.
+It does not require a paid API, cloud account, hosted LLM, or project-specific backend. The CLI uses provider-specific adapters for supported research websites and normalizes results into a consistent text or JSON format.
 
 ## Requirements
 
 - Python 3.10 or newer
 - [`uv`](https://docs.astral.sh/uv/) for installation as a standalone tool
-- An HTTP service that accepts the `/query` contract documented below
 
 ## Install
 
@@ -20,68 +19,19 @@ cd query-kit
 uv tool install --force .
 ```
 
+`uv` does not have a `uv tool reinstall` command. To refresh an existing local install after pulling changes, run the same install command again from the repository root:
+
+```bash
+uv tool install --force .
+```
+
 After installation, confirm the executable is available:
 
 ```bash
 query-cli --help
 ```
 
-To reinstall after local changes, run the install command again from the repository root:
-
-```bash
-uv tool install --force .
-```
-
 ## Use
-
-`query-cli` has two modes:
-
-- `ask` sends a query to a compatible JSON API that implements `POST /query`.
-- `search` searches supported research websites through provider-specific adapters.
-
-### Generic API queries
-
-Submit a query by passing the service base URL explicitly:
-
-```bash
-query-cli ask "hello" --base-url http://localhost:8000
-```
-
-Or set the base URL once in your shell:
-
-```bash
-export QUERY_CLI_BASE_URL=http://localhost:8000
-query-cli ask "hello"
-```
-
-Return structured JSON for scripts:
-
-```bash
-query-cli ask "hello" --base-url http://localhost:8000 --format json
-```
-
-Set a request timeout in seconds:
-
-```bash
-query-cli ask "hello" --base-url http://localhost:8000 --timeout 10
-```
-
-If your service requires bearer-token authentication, pass an API key:
-
-```bash
-query-cli ask "hello" --base-url http://localhost:8000 --api-key "$QUERY_CLI_API_KEY"
-```
-
-Or use the environment variable directly:
-
-```bash
-export QUERY_CLI_API_KEY=your-token
-query-cli ask "hello" --base-url http://localhost:8000
-```
-
-Do not pass a normal website URL to `ask` unless that website implements the `/query` JSON API. For example, ACL Anthology should use research search mode instead of `ask --base-url https://aclanthology.org/`.
-
-### Research website search
 
 Search ACL Anthology directly:
 
@@ -95,12 +45,6 @@ Search arXiv directly:
 query-cli search "explainable NLP" --provider arxiv --limit 5
 ```
 
-Return normalized JSON results:
-
-```bash
-query-cli search "explainable NLP" --provider acl --limit 5 --format json
-```
-
 Search more than one provider by repeating `--provider`:
 
 ```bash
@@ -111,6 +55,18 @@ Search all launch-ready providers:
 
 ```bash
 query-cli search "explainable NLP" --provider all --limit 10
+```
+
+Return normalized JSON results:
+
+```bash
+query-cli search "explainable NLP" --provider acl --limit 5 --format json
+```
+
+The earlier ACL Anthology query should be run with `search`:
+
+```bash
+query-cli search "list down xai driven nlp research papers in last 1 year" --provider acl --limit 5
 ```
 
 Results are normalized into the same shape across providers, deduplicated by title/link, and limited after merging.
@@ -139,8 +95,6 @@ Flags take precedence over environment variables.
 
 | Flag | Environment variable | Description |
 | --- | --- | --- |
-| `--base-url` | `QUERY_CLI_BASE_URL` | Base URL of the query service. Required by flag or env var. |
-| `--api-key` | `QUERY_CLI_API_KEY` | Optional bearer token for authenticated services. |
 | `--timeout` | `QUERY_CLI_TIMEOUT` | Optional request timeout in seconds. Defaults to `30`. |
 | `--format` | N/A | Output format: `text` or `json`. Defaults to `text`. |
 | `--verbose` | N/A | Print request diagnostics to stderr. |
@@ -157,40 +111,32 @@ Provider integrations follow a small ports-and-adapters shape:
 
 Keep website-specific HTTP and parsing code inside `src/query_cli/adapters/` so the CLI and service layer stay reusable.
 
-## HTTP Contract
+## Troubleshooting
 
-The CLI sends a JSON request:
+### `uv tool reinstall` fails
 
-```http
-POST {base_url}/query
-Accept: application/json
-Content-Type: application/json
+`uv tool reinstall --force .` is not a valid `uv` command. Use this instead from the repository root:
+
+```bash
+uv tool install --force .
 ```
 
-```json
-{"query": "..."}
+### `query-cli search` is not available after install
+
+If `query-cli --help` only shows `{ask}`, the installed executable is stale. Pull the latest code and reinstall from the repository root:
+
+```bash
+git pull
+uv tool install --force .
+query-cli --help
 ```
 
-If an API key is configured, the CLI also sends:
-
-```http
-Authorization: Bearer <token>
-```
-
-The response must be a JSON object containing one of these fields:
-
-```json
-{"result": "..."}
-{"answer": "..."}
-{"results": ["..."]}
-```
+The help output should include the `search` command.
 
 ## Exit Codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Success. |
-| `1` | User/configuration error, such as missing `--base-url`. |
-| `2` | Network or HTTP transport error. |
-| `3` | Server returned an error response. |
-| `4` | Response was not valid JSON or did not match the expected shape. |
+| `1` | User/configuration error, such as an invalid provider or limit. |
+| `2` | Network or provider request error. |
