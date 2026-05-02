@@ -5,7 +5,9 @@ import os
 import httpx
 
 from query_cli.adapters.http import (
+    AsyncProviderHttpClient,
     ProviderHttpClient,
+    async_transport_for,
     ensure_success,
     parse_json_response,
 )
@@ -25,6 +27,7 @@ class SemanticScholarProvider:
         base_url: str = GRAPH_API_BASE_URL,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        async_transport: httpx.AsyncBaseTransport | None = None,
         api_key: str | None = None,
         min_interval: float = 1.0,
         retries: int = 2,
@@ -45,6 +48,16 @@ class SemanticScholarProvider:
             retries=retries,
             retry_backoff=1.0,
         )
+        self.async_http = AsyncProviderHttpClient(
+            provider_id=self.provider_id,
+            base_url=base_url,
+            timeout=timeout,
+            transport=async_transport_for(transport, async_transport),
+            headers=headers,
+            min_interval=min_interval,
+            retries=retries,
+            retry_backoff=1.0,
+        )
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         params = {
@@ -57,6 +70,23 @@ class SemanticScholarProvider:
             params["year"] = year_filter
             params["publicationDateOrYear"] = year_filter
         response = self.http.get("paper/search", params=params)
+        ensure_success(response)
+        data = parse_json_response(response)
+        return parse_semantic_scholar_results(
+            data, limit=query.limit, since_year=query.since_year
+        )
+
+    async def search_async(self, query: SearchQuery) -> list[SearchResult]:
+        params = {
+            "query": query.text,
+            "limit": str(query.limit),
+            "fields": SEARCH_FIELDS,
+        }
+        if query.since_year is not None:
+            year_filter = f"{query.since_year}-"
+            params["year"] = year_filter
+            params["publicationDateOrYear"] = year_filter
+        response = await self.async_http.get("paper/search", params=params)
         ensure_success(response)
         data = parse_json_response(response)
         return parse_semantic_scholar_results(

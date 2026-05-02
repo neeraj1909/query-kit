@@ -1,3 +1,4 @@
+import asyncio
 import gzip
 
 import httpx
@@ -86,6 +87,26 @@ def test_acl_provider_requests_bibtex_export():
     )
 
     results = provider.search(SearchQuery(text="explaining nlp", limit=5))
+
+    assert seen["url"] == "https://aclanthology.org/anthology+abstracts.bib.gz"
+    assert len(results) == 1
+
+
+def test_acl_provider_async_requests_bibtex_export():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, content=gzip.compress(ACL_BIB))
+
+    provider = AclAnthologyProvider(
+        base_url="https://aclanthology.org/",
+        transport=httpx.MockTransport(handler),
+    )
+
+    results = asyncio.run(
+        provider.search_async(SearchQuery(text="explaining nlp", limit=5))
+    )
 
     assert seen["url"] == "https://aclanthology.org/anthology+abstracts.bib.gz"
     assert len(results) == 1

@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from query_cli.adapters.arxiv import ArxivProvider, build_arxiv_query, parse_arxiv_feed
@@ -54,6 +56,29 @@ def test_arxiv_provider_requests_public_api():
     provider = ArxivProvider(transport=httpx.MockTransport(handler))
 
     results = provider.search(SearchQuery(text="explainable NLP", limit=5))
+
+    assert seen["url"] == (
+        "https://export.arxiv.org/api/query?search_query=all%3Aexplainable+AND+all%3ANLP&start=0&max_results=5"
+        "&sortBy=lastUpdatedDate&sortOrder=descending"
+    )
+    assert len(results) == 2
+
+
+def test_arxiv_provider_async_requests_public_api():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, text=ARXIV_XML)
+
+    provider = ArxivProvider(
+        transport=httpx.MockTransport(handler),
+        min_interval=0,
+    )
+
+    results = asyncio.run(
+        provider.search_async(SearchQuery(text="explainable NLP", limit=5))
+    )
 
     assert seen["url"] == (
         "https://export.arxiv.org/api/query?search_query=all%3Aexplainable+AND+all%3ANLP&start=0&max_results=5"

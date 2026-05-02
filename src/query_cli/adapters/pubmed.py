@@ -7,7 +7,10 @@ import xml.etree.ElementTree as ET
 import httpx
 
 from query_cli.adapters.http import (
+    AsyncProviderHttpClient,
+    AsyncProviderHttpSession,
     ProviderHttpClient,
+    async_transport_for,
     ensure_success,
     parse_json_response,
     parse_xml_text,
@@ -27,6 +30,7 @@ class PubMedProvider:
         base_url: str = EUTILS_BASE_URL,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        async_transport: httpx.AsyncBaseTransport | None = None,
         api_key: str | None = None,
         tool: str | None = None,
         email: str | None = None,
@@ -50,6 +54,14 @@ class PubMedProvider:
             min_interval=min_interval,
             retries=retries,
         )
+        self.async_http = AsyncProviderHttpClient(
+            provider_id=self.provider_id,
+            base_url=base_url,
+            timeout=timeout,
+            transport=async_transport_for(transport, async_transport),
+            min_interval=min_interval,
+            retries=retries,
+        )
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         ids = self._search_ids(query)
@@ -65,6 +77,26 @@ class PubMedProvider:
                 }
             ),
         )
+        ensure_success(response)
+        return parse_pubmed_articles(
+            response.text, limit=query.limit, since_year=query.since_year
+        )
+
+    async def search_async(self, query: SearchQuery) -> list[SearchResult]:
+        async with self.async_http.session() as http:
+            ids = await self._search_ids_async(query, http=http)
+            if not ids:
+                return []
+            response = await http.get(
+                "efetch.fcgi",
+                params=self._with_common_params(
+                    {
+                        "db": "pubmed",
+                        "id": ",".join(ids),
+                        "retmode": "xml",
+                    }
+                ),
+            )
         ensure_success(response)
         return parse_pubmed_articles(
             response.text, limit=query.limit, since_year=query.since_year
@@ -86,6 +118,36 @@ class PubMedProvider:
                 }
             )
         response = self.http.get(
+            "esearch.fcgi", params=self._with_common_params(params)
+        )
+        ensure_success(response)
+        data = parse_json_response(response)
+        try:
+            ids = data["esearchresult"]["idlist"]
+        except (KeyError, TypeError) as exc:
+            raise ProviderParseError("malformed PubMed ESearch response") from exc
+        if not isinstance(ids, list):
+            raise ProviderParseError("malformed PubMed ESearch id list")
+        return [str(pmid) for pmid in ids if str(pmid).strip()]
+
+    async def _search_ids_async(
+        self, query: SearchQuery, *, http: AsyncProviderHttpSession
+    ) -> list[str]:
+        params = {
+            "db": "pubmed",
+            "term": query.text,
+            "retmode": "json",
+            "retmax": str(query.limit),
+        }
+        if query.since_year is not None:
+            params.update(
+                {
+                    "datetype": "pdat",
+                    "mindate": f"{query.since_year}/01/01",
+                    "maxdate": "3000/12/31",
+                }
+            )
+        response = await http.get(
             "esearch.fcgi", params=self._with_common_params(params)
         )
         ensure_success(response)

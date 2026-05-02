@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from collections.abc import Mapping
 
-from query_cli.application.ports import SearchProvider
+from query_cli.application.ports import SearchProviderLike
 from query_cli.domain.errors import UnknownProviderError
 
 
@@ -12,7 +12,7 @@ def get_search_providers(
     *,
     timeout: float,
     environ: Mapping[str, str] | None = None,
-) -> list[SearchProvider]:
+) -> list[SearchProviderLike]:
     from query_cli.adapters.acl import AclAnthologyProvider
     from query_cli.adapters.arxiv import ArxivProvider
     from query_cli.adapters.openreview import OpenReviewProvider
@@ -24,7 +24,7 @@ def get_search_providers(
             return None
         return environ.get(name, "")
 
-    registry: dict[str, SearchProvider] = {
+    registry: dict[str, SearchProviderLike] = {
         "acl": AclAnthologyProvider(timeout=timeout),
         "arxiv": ArxivProvider(timeout=timeout),
         "pubmed": PubMedProvider(

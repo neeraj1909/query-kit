@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from query_cli.adapters.semantic_scholar import (
@@ -61,6 +63,40 @@ def test_semantic_scholar_provider_requests_graph_search_with_filters():
 
     results = provider.search(
         SearchQuery(text="explainable nlp", since_year=2024, limit=3)
+    )
+
+    assert seen["path"] == "/graph/v1/paper/search"
+    assert seen["params"] == {
+        "query": "explainable nlp",
+        "limit": "3",
+        "fields": "title,authors,year,venue,abstract,url",
+        "year": "2024-",
+        "publicationDateOrYear": "2024-",
+    }
+    assert seen["api_key"] == "secret-key"
+    assert len(results) == 1
+
+
+def test_semantic_scholar_provider_async_requests_graph_search_with_filters():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        seen["api_key"] = request.headers.get("x-api-key")
+        return httpx.Response(200, json=SEMANTIC_SCHOLAR_JSON)
+
+    provider = SemanticScholarProvider(
+        base_url="https://api.example.test/graph/v1/",
+        transport=httpx.MockTransport(handler),
+        api_key="secret-key",
+        min_interval=0,
+    )
+
+    results = asyncio.run(
+        provider.search_async(
+            SearchQuery(text="explainable nlp", since_year=2024, limit=3)
+        )
     )
 
     assert seen["path"] == "/graph/v1/paper/search"

@@ -95,6 +95,33 @@ query-cli search "list down xai driven nlp research papers in last 1 year" --pro
 
 Results are normalized into the same shape across providers, deduplicated by title/link, and limited after merging.
 
+## Python API
+
+Synchronous Python callers can use the same service that powers the CLI:
+
+```python
+from query_cli.application.services import search_research
+from query_cli.bootstrap import get_search_providers
+
+providers = get_search_providers(["arxiv", "pubmed"], timeout=30)
+results = search_research("explainable nlp", providers, limit=10)
+```
+
+Async applications should use the native async service instead of calling the sync
+wrapper inside an existing event loop:
+
+```python
+from query_cli.application.services import search_research_async
+from query_cli.bootstrap import get_search_providers
+
+providers = get_search_providers(["arxiv", "pubmed"], timeout=30)
+results = await search_research_async("explainable nlp", providers, limit=10)
+```
+
+Built-in providers expose both `search(...)` and `search_async(...)`. The async
+service calls provider `search_async(...)` methods concurrently and falls back to
+running sync-only third-party providers in a worker thread.
+
 ## Search Workflow
 
 When you run:
@@ -109,7 +136,7 @@ The CLI passes through these phases:
 2. **Resolve configuration**: the CLI resolves `--timeout` or `QUERY_CLI_TIMEOUT`, then defaults to `30` seconds if neither is set.
 3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, `pubmed`, `semantic-scholar`, `openreview`, or `all` to concrete provider adapters.
 4. **Build domain query**: the application service creates a `SearchQuery` with the keyword text, optional `--since-year`, and result limit, then validates that the query is not empty and the limit is positive.
-5. **Call provider adapters**: each selected adapter performs provider-specific HTTP and parsing work:
+5. **Call provider adapters**: each selected adapter performs provider-specific HTTP and parsing work. The sync CLI enters one service-level event loop, then the service runs async-capable providers concurrently while preserving provider order for merging:
    - `acl` downloads ACL Anthology's public BibTeX export with abstracts and matches query terms against paper metadata.
    - `arxiv` calls the public arXiv Atom API and parses the XML feed.
    - `pubmed` calls NCBI E-utilities ESearch and EFetch for PubMed records.
@@ -178,10 +205,11 @@ query-cli search "explainable nlp" --provider all --limit 10 --format json
 Provider integrations follow a small ports-and-adapters shape:
 
 1. Implement the `SearchProvider` protocol from `src/query_cli/application/ports.py`.
-2. Return normalized `SearchResult` objects from `src/query_cli/domain/model.py`.
-3. Register the provider in `src/query_cli/bootstrap.py`.
-4. Add mocked HTTP adapter tests and CLI/service tests.
-5. Document provider limits and examples here.
+2. Implement `AsyncSearchProvider.search_async(...)` for providers that perform network I/O. Sync-only providers still work through the service compatibility bridge, but native async implementations avoid blocking event-loop-owned applications.
+3. Return normalized `SearchResult` objects from `src/query_cli/domain/model.py`.
+4. Register the provider in `src/query_cli/bootstrap.py`.
+5. Add mocked HTTP adapter tests for both `search(...)` and `search_async(...)`, plus CLI/service tests.
+6. Document provider limits and examples here.
 
 Keep website-specific HTTP and parsing code inside `src/query_cli/adapters/` so the CLI and service layer stay reusable.
 
@@ -206,6 +234,16 @@ query-cli --help
 ```
 
 The help output should include the `search` command.
+
+### `query-cli --help` still shows stale commands after reinstall
+
+If `uv tool install --force .` reports success but `query-cli --help` still shows
+old commands, force uv to refresh its cached build:
+
+```bash
+uv tool install --force --reinstall --refresh .
+query-cli --help
+```
 
 ## Exit Codes
 

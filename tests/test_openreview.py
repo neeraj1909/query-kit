@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from query_cli.adapters.openreview import OpenReviewProvider, parse_openreview_notes
@@ -60,6 +62,31 @@ def test_openreview_provider_requests_notes_search():
 
     results = provider.search(
         SearchQuery(text="explainable nlp", since_year=2022, limit=2)
+    )
+
+    assert seen["path"] == "/notes/search"
+    assert seen["params"] == {"term": "explainable nlp", "limit": "2"}
+    assert len(results) == 1
+
+
+def test_openreview_provider_async_requests_notes_search():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=OPENREVIEW_JSON)
+
+    provider = OpenReviewProvider(
+        base_url="https://api2.example.test/",
+        transport=httpx.MockTransport(handler),
+        min_interval=0,
+    )
+
+    results = asyncio.run(
+        provider.search_async(
+            SearchQuery(text="explainable nlp", since_year=2022, limit=2)
+        )
     )
 
     assert seen["path"] == "/notes/search"

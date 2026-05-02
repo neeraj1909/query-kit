@@ -7,7 +7,12 @@ from urllib.parse import urljoin
 
 import httpx
 
-from query_cli.adapters.http import ProviderHttpClient, ensure_success
+from query_cli.adapters.http import (
+    AsyncProviderHttpClient,
+    ProviderHttpClient,
+    async_transport_for,
+    ensure_success,
+)
 from query_cli.domain import SearchQuery, SearchResult
 from query_cli.domain.errors import ProviderParseError
 
@@ -24,6 +29,7 @@ class AclAnthologyProvider:
         base_url: str = "https://aclanthology.org/",
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        async_transport: httpx.AsyncBaseTransport | None = None,
         retries: int = 1,
     ) -> None:
         self.http = ProviderHttpClient(
@@ -33,11 +39,26 @@ class AclAnthologyProvider:
             transport=transport,
             retries=retries,
         )
+        self.async_http = AsyncProviderHttpClient(
+            provider_id=self.provider_id,
+            base_url=base_url,
+            timeout=timeout,
+            transport=async_transport_for(transport, async_transport),
+            retries=retries,
+        )
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         response = self.http.get(ACL_BIBTEX_WITH_ABSTRACTS)
         if response.status_code == 404:
             response = self.http.get(ACL_BIBTEX_FALLBACK)
+        ensure_success(response)
+        return search_acl_bibtex(response.content, query=query, limit=query.limit)
+
+    async def search_async(self, query: SearchQuery) -> list[SearchResult]:
+        async with self.async_http.session() as http:
+            response = await http.get(ACL_BIBTEX_WITH_ABSTRACTS)
+            if response.status_code == 404:
+                response = await http.get(ACL_BIBTEX_FALLBACK)
         ensure_success(response)
         return search_acl_bibtex(response.content, query=query, limit=query.limit)
 
