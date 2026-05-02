@@ -34,6 +34,13 @@ uv tool install --force .
 
 ## Use
 
+`query-cli` has two modes:
+
+- `ask` sends a query to a compatible JSON API that implements `POST /query`.
+- `search` searches supported research websites through provider-specific adapters.
+
+### Generic API queries
+
 Submit a query by passing the service base URL explicitly:
 
 ```bash
@@ -72,6 +79,60 @@ export QUERY_CLI_API_KEY=your-token
 query-cli ask "hello" --base-url http://localhost:8000
 ```
 
+Do not pass a normal website URL to `ask` unless that website implements the `/query` JSON API. For example, ACL Anthology should use research search mode instead of `ask --base-url https://aclanthology.org/`.
+
+### Research website search
+
+Search ACL Anthology directly:
+
+```bash
+query-cli search "xai driven nlp" --provider acl --limit 5
+```
+
+Search arXiv directly:
+
+```bash
+query-cli search "explainable NLP" --provider arxiv --limit 5
+```
+
+Return normalized JSON results:
+
+```bash
+query-cli search "explainable NLP" --provider acl --limit 5 --format json
+```
+
+Search more than one provider by repeating `--provider`:
+
+```bash
+query-cli search "explainable NLP" --provider acl --provider arxiv --limit 10
+```
+
+Search all launch-ready providers:
+
+```bash
+query-cli search "explainable NLP" --provider all --limit 10
+```
+
+Results are normalized into the same shape across providers, deduplicated by title/link, and limited after merging.
+
+## Supported Providers
+
+| Provider | Status | Notes |
+| --- | --- | --- |
+| `acl` | Supported | Searches ACL Anthology using its public BibTeX export. Best for NLP and computational linguistics papers. |
+| `arxiv` | Supported | Searches the public arXiv Atom API. Best for broad CS, AI, ML, and NLP preprints. |
+| `semantic-scholar` | Planned | Good candidate for broad academic metadata, but should remain optional and free/public. |
+| `openreview` | Planned | Good candidate for ML conference submissions and reviews. |
+| `pubmed` | Planned | Good candidate for biomedical and clinical NLP queries. |
+
+## Provider Notes
+
+- The CLI does not use paid APIs by default.
+- Public providers may rate-limit requests or change response formats.
+- Live search results can vary because they come from external websites.
+- `--timeout` applies per provider request.
+- Use `--verbose` to print selected providers and result counts to stderr.
+
 ## Configuration
 
 Flags take precedence over environment variables.
@@ -83,6 +144,18 @@ Flags take precedence over environment variables.
 | `--timeout` | `QUERY_CLI_TIMEOUT` | Optional request timeout in seconds. Defaults to `30`. |
 | `--format` | N/A | Output format: `text` or `json`. Defaults to `text`. |
 | `--verbose` | N/A | Print request diagnostics to stderr. |
+
+## Adding More Providers
+
+Provider integrations follow a small ports-and-adapters shape:
+
+1. Implement the `SearchProvider` protocol from `src/query_cli/application/ports.py`.
+2. Return normalized `SearchResult` objects from `src/query_cli/domain/model.py`.
+3. Register the provider in `src/query_cli/bootstrap.py`.
+4. Add mocked HTTP adapter tests and CLI/service tests.
+5. Document provider limits and examples here.
+
+Keep website-specific HTTP and parsing code inside `src/query_cli/adapters/` so the CLI and service layer stay reusable.
 
 ## HTTP Contract
 

@@ -7,6 +7,8 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import TextIO
 
+from .application.services import search_research
+from .bootstrap import get_search_providers
 from .client import (
     QueryNetworkError,
     QueryResponseError,
@@ -14,6 +16,8 @@ from .client import (
     QueryServerError,
     submit_query,
 )
+from .domain import SearchResult
+from .domain.errors import SearchError
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
@@ -38,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    ask = subparsers.add_parser("ask", help="submit a query")
+    ask = subparsers.add_parser("ask", help="submit a query to a compatible /query API")
     ask.add_argument("query", help="query text to submit")
     ask.add_argument("--base-url", help="API base URL; defaults to QUERY_CLI_BASE_URL")
     ask.add_argument("--api-key", help="bearer token; defaults to QUERY_CLI_API_KEY")
@@ -53,6 +57,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format",
     )
     ask.add_argument("--verbose", action="store_true", help="print diagnostic details to stderr")
+
+    search = subparsers.add_parser("search", help="search supported research websites")
+    search.add_argument("query", help="research query text")
+    search.add_argument(
+        "--provider",
+        action="append",
+        choices=("acl", "arxiv", "all"),
+        default=None,
+        help="research website provider; repeatable; defaults to acl",
+    )
+    search.add_argument("--limit", type=int, default=10, help="maximum number of results")
+    search.add_argument(
+        "--timeout",
+        help="request timeout in seconds; defaults to QUERY_CLI_TIMEOUT or 30",
+    )
+    search.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="output format",
+    )
+    search.add_argument("--verbose", action="store_true", help="print diagnostic details to stderr")
     return parser
 
 
@@ -74,6 +100,8 @@ def run(
 
     if args.command == "ask":
         return run_ask(args, stdout=stdout, stderr=stderr, client=client, environ=env)
+    if args.command == "search":
+        return run_search(args, stdout=stdout, stderr=stderr, environ=env)
 
     parser.error("unknown command")
     return EXIT_USAGE
@@ -125,6 +153,50 @@ def run_ask(
     else:
         print(result.text, file=stdout)
     return EXIT_SUCCESS
+
+
+def run_search(
+    args: argparse.Namespace,
+    *,
+    stdout: TextIO,
+    stderr: TextIO,
+    environ: os._Environ[str] | dict[str, str],
+) -> int:
+    try:
+        timeout = resolve_timeout(args.timeout, environ.get("QUERY_CLI_TIMEOUT"))
+        provider_ids = args.provider or ["acl"]
+        providers = get_search_providers(provider_ids, timeout=timeout)
+        if args.verbose:
+            providers_text = ", ".join(provider.provider_id for provider in providers)
+            print(f"searching providers: {providers_text}", file=stderr)
+        results = search_research(args.query, providers, limit=args.limit)
+    except ValueError as exc:
+        print(f"error: {exc}", file=stderr)
+        return EXIT_USAGE
+    except SearchError as exc:
+        print(f"search error: {exc}", file=stderr)
+        return EXIT_USAGE
+    except QueryNetworkError as exc:
+        print(f"network error: {exc}", file=stderr)
+        return EXIT_NETWORK
+    except Exception as exc:
+        print(f"search error: {exc}", file=stderr)
+        return EXIT_NETWORK
+
+    if args.verbose:
+        print(f"results returned: {len(results)}", file=stderr)
+
+    if args.format == "json":
+        print(json.dumps([result.to_dict() for result in results], ensure_ascii=False), file=stdout)
+    else:
+        print(format_search_results(results), file=stdout)
+    return EXIT_SUCCESS
+
+
+def format_search_results(results: list[SearchResult]) -> str:
+    if not results:
+        return "No results found."
+    return "\n\n".join(result.to_text() for result in results)
 
 
 def resolve_timeout(flag_value: str | None, env_value: str | None) -> float:
