@@ -71,6 +71,29 @@ query-cli search "list down xai driven nlp research papers in last 1 year" --pro
 
 Results are normalized into the same shape across providers, deduplicated by title/link, and limited after merging.
 
+## Search Workflow
+
+When you run:
+
+```bash
+query-cli search "<keyword>" --provider <provider-name>
+```
+
+The CLI passes through these phases:
+
+1. **Parse command**: `argparse` reads the query text, provider names, limit, timeout, format, and verbose flag.
+2. **Resolve configuration**: the CLI resolves `--timeout` or `QUERY_CLI_TIMEOUT`, then defaults to `30` seconds if neither is set.
+3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, or `all` to concrete provider adapters.
+4. **Build domain query**: the application service creates a `SearchQuery` with the keyword text and result limit, then validates that the query is not empty and the limit is positive.
+5. **Call provider adapters**: each selected adapter performs provider-specific HTTP and parsing work:
+   - `acl` downloads ACL Anthology's public BibTeX export and matches query terms against paper metadata.
+   - `arxiv` calls the public arXiv Atom API and parses the XML feed.
+6. **Normalize results**: provider-specific records are converted into shared `SearchResult` objects with fields such as title, URL, source, authors, year, venue, and abstract.
+7. **Merge and deduplicate**: the service merges results from all selected providers, deduplicates by normalized title/link, and applies the global `--limit`.
+8. **Format output**: the CLI prints readable text by default, or normalized JSON when `--format json` is passed.
+
+Provider failures are isolated. If one provider fails but another returns results, the CLI still prints the successful results; if all selected providers fail, it returns a clear error.
+
 ## Supported Providers
 
 | Provider | Status | Notes |
