@@ -16,8 +16,9 @@ class QueryNetworkError(QueryClientError):
 
 
 class QueryServerError(QueryClientError):
-    def __init__(self, status_code: int, message: str) -> None:
+    def __init__(self, status_code: int, message: str, url: str | None = None) -> None:
         self.status_code = status_code
+        self.url = url
         super().__init__(message)
 
 
@@ -55,7 +56,7 @@ def submit_query(
         raise QueryNetworkError(str(exc)) from exc
 
     if response.is_error:
-        raise QueryServerError(response.status_code, format_server_error(response))
+        raise QueryServerError(response.status_code, format_server_error(response), str(response.url))
 
     try:
         payload = response.json()
@@ -91,7 +92,22 @@ def format_value(value: Any) -> str:
 
 
 def format_server_error(response: httpx.Response) -> str:
+    content_type = response.headers.get("content-type", "")
+    if "html" in content_type.lower() or looks_like_html(response.text):
+        message = f"Server returned HTTP {response.status_code} from {response.url}"
+        if "aclanthology.org" in str(response.url):
+            return (
+                f"{message}. This looks like an HTML website, not a compatible /query API. "
+                "For ACL Anthology, use: query-cli search \"...\" --provider acl"
+            )
+        return f"{message}. Response looked like HTML, not the expected JSON API response."
+
     detail = response.text.strip()
     if detail:
-        return f"Server returned HTTP {response.status_code}: {detail}"
+        return f"Server returned HTTP {response.status_code}: {detail[:500]}"
     return f"Server returned HTTP {response.status_code}"
+
+
+def looks_like_html(text: str) -> bool:
+    prefix = text.lstrip()[:100].lower()
+    return prefix.startswith("<!doctype html") or prefix.startswith("<html")
