@@ -15,7 +15,7 @@ It is provider-agnostic: it does not require a paid API, cloud account, hosted L
 `uv tool install --force .` installs the project from the current directory only. If you do not already have the repository locally, clone it first, then run the install command from inside the checkout.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/neeraj1909/query-kit.git
 cd query-kit
 uv tool install --force .
 ```
