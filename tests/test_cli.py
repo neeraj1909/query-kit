@@ -3,7 +3,7 @@ from io import StringIO
 import pytest
 
 from query_cli.cli import EXIT_NETWORK, EXIT_RESPONSE, EXIT_SERVER, EXIT_SUCCESS, EXIT_USAGE, resolve_timeout, run
-from query_cli.client import QueryNetworkError, QueryResponseError, QueryResult, QueryServerError
+from query_cli.client import QueryNetworkError, QueryResponseError, QueryResult, QueryServerError, format_server_error
 
 
 def test_run_ask_uses_env_base_url_and_prints_text():
@@ -150,6 +150,77 @@ def test_run_verbose_prints_request_diagnostic():
 
     assert code == EXIT_SUCCESS
     assert "POST https://example.test/api/query" in stderr.getvalue()
+
+
+def test_run_search_defaults_to_acl_and_prints_results(monkeypatch):
+    from query_cli.domain import SearchResult
+
+    class FakeProvider:
+        provider_id = "acl"
+
+        def search(self, query):
+            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+
+    monkeypatch.setattr("query_cli.cli.get_search_providers", lambda provider_ids, timeout: [FakeProvider()])
+    stdout = StringIO()
+    stderr = StringIO()
+    code = run(
+        ["search", "xai driven nlp", "--limit", "1"],
+        stdout=stdout,
+        stderr=stderr,
+        environ={},
+    )
+
+    assert code == EXIT_SUCCESS
+    assert "Paper title" in stdout.getvalue()
+    assert "https://example.test/paper" in stdout.getvalue()
+
+
+def test_run_search_accepts_repeated_providers(monkeypatch):
+    from query_cli.domain import SearchResult
+
+    seen = {}
+
+    class FakeProvider:
+        provider_id = "acl"
+
+        def search(self, query):
+            return [SearchResult(title="Paper title", url="https://example.test/paper", source="ACL Anthology")]
+
+    def fake_get_search_providers(provider_ids, timeout):
+        seen["provider_ids"] = provider_ids
+        return [FakeProvider()]
+
+    monkeypatch.setattr("query_cli.cli.get_search_providers", fake_get_search_providers)
+    stdout = StringIO()
+    stderr = StringIO()
+    code = run(
+        ["search", "xai driven nlp", "--provider", "acl", "--provider", "arxiv"],
+        stdout=stdout,
+        stderr=stderr,
+        environ={},
+    )
+
+    assert code == EXIT_SUCCESS
+    assert seen["provider_ids"] == ["acl", "arxiv"]
+    assert "Paper title" in stdout.getvalue()
+
+
+def test_format_server_error_summarizes_acl_html():
+    import httpx
+
+    response = httpx.Response(
+        404,
+        headers={"content-type": "text/html"},
+        text="<!doctype html><html><body>not found</body></html>",
+        request=httpx.Request("POST", "https://aclanthology.org/query"),
+    )
+
+    message = format_server_error(response)
+
+    assert "Server returned HTTP 404 from https://aclanthology.org/query" in message
+    assert "query-cli search" in message
+    assert "<!doctype html>" not in message
 
 
 def test_resolve_timeout_defaults_and_env():
