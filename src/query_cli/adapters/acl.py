@@ -18,6 +18,7 @@ from query_cli.domain.errors import ProviderParseError
 
 ACL_BIBTEX_WITH_ABSTRACTS = "anthology+abstracts.bib.gz"
 ACL_BIBTEX_FALLBACK = "anthology.bib.gz"
+ACL_BIBTEX_FALLBACK_STATUSES = {404, 429, 500, 502, 503, 504}
 
 
 class AclAnthologyProvider:
@@ -49,7 +50,7 @@ class AclAnthologyProvider:
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         response = self.http.get(ACL_BIBTEX_WITH_ABSTRACTS)
-        if response.status_code == 404:
+        if should_try_plain_bibtex_export(response.status_code):
             response = self.http.get(ACL_BIBTEX_FALLBACK)
         ensure_success(response)
         return search_acl_bibtex(response.content, query=query, limit=query.limit)
@@ -57,10 +58,14 @@ class AclAnthologyProvider:
     async def search_async(self, query: SearchQuery) -> list[SearchResult]:
         async with self.async_http.session() as http:
             response = await http.get(ACL_BIBTEX_WITH_ABSTRACTS)
-            if response.status_code == 404:
+            if should_try_plain_bibtex_export(response.status_code):
                 response = await http.get(ACL_BIBTEX_FALLBACK)
         ensure_success(response)
         return search_acl_bibtex(response.content, query=query, limit=query.limit)
+
+
+def should_try_plain_bibtex_export(status_code: int) -> bool:
+    return status_code in ACL_BIBTEX_FALLBACK_STATUSES
 
 
 def search_acl_bibtex(

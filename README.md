@@ -9,7 +9,30 @@ It does not require a paid API, cloud account, hosted LLM, or project-specific b
 - Python 3.10 or newer
 - [`uv`](https://docs.astral.sh/uv/) for installation as a standalone tool
 
-## Install
+## Install From PyPI
+
+After the package is published to PyPI, install the command-line tool with:
+
+```bash
+uv tool install query-kit
+```
+
+Confirm the executable is available:
+
+```bash
+query-cli --help
+```
+
+Use it as a Python library in another project with:
+
+```bash
+uv add query-kit
+```
+
+The PyPI distribution is named `query-kit`; the import package remains
+`query_cli`, and the console command remains `query-cli`.
+
+## Install From A Local Checkout
 
 `uv tool install --force .` installs the project from the current directory only. If you do not already have the repository locally, clone it first, then run the install command from inside the checkout.
 

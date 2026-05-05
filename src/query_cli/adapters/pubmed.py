@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-import xml.etree.ElementTree as ET
+from typing import Any
 
 import httpx
 
@@ -202,7 +202,7 @@ def parse_pubmed_articles(
     return results
 
 
-def parse_pubmed_authors(article: ET.Element) -> tuple[str, ...]:
+def parse_pubmed_authors(article: Any) -> tuple[str, ...]:
     authors: list[str] = []
     for author in article.findall(".//AuthorList/Author"):
         collective = text_of(author, "CollectiveName")
@@ -221,7 +221,7 @@ def parse_pubmed_authors(article: ET.Element) -> tuple[str, ...]:
     return tuple(authors)
 
 
-def parse_pubmed_abstract(article: ET.Element) -> str | None:
+def parse_pubmed_abstract(article: Any) -> str | None:
     parts = [
         text_of(abstract_text, ".")
         for abstract_text in article.findall(".//Abstract/AbstractText")
@@ -230,7 +230,7 @@ def parse_pubmed_abstract(article: ET.Element) -> str | None:
     return abstract or None
 
 
-def parse_pubmed_year(article: ET.Element) -> int | None:
+def parse_pubmed_year(article: Any) -> int | None:
     for path in (
         ".//JournalIssue/PubDate/Year",
         ".//ArticleDate/Year",
@@ -247,7 +247,7 @@ def parse_pubmed_year(article: ET.Element) -> int | None:
     return None
 
 
-def text_of(element: ET.Element, path: str) -> str:
+def text_of(element: Any, path: str) -> str:
     child = element if path == "." else element.find(path)
     if child is None:
         return ""

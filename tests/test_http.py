@@ -83,6 +83,24 @@ def test_provider_http_client_retries_transient_status():
     assert sleeps == [0.25]
 
 
+def test_provider_http_client_maps_blank_request_errors_with_context():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    client = ProviderHttpClient(
+        provider_id="test-blank-error",
+        base_url="https://example.test/",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(SearchNetworkError) as exc_info:
+        client.get("slow")
+
+    message = str(exc_info.value)
+    assert "GET https://example.test/slow" in message
+    assert "ReadTimeout" in message
+
+
 def test_async_provider_http_client_gets_and_posts_with_mock_transport():
     seen = []
 
@@ -189,6 +207,26 @@ def test_async_provider_http_client_maps_request_errors():
 
     with pytest.raises(SearchNetworkError, match="offline"):
         asyncio.run(run())
+
+
+def test_async_provider_http_client_maps_blank_request_errors_with_context():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    async def run():
+        client = AsyncProviderHttpClient(
+            provider_id="test-async-blank-error",
+            base_url="https://example.test/",
+            transport=httpx.MockTransport(handler),
+        )
+        await client.get("slow")
+
+    with pytest.raises(SearchNetworkError) as exc_info:
+        asyncio.run(run())
+
+    message = str(exc_info.value)
+    assert "GET https://example.test/slow" in message
+    assert "ReadTimeout" in message
 
 
 def test_ensure_success_maps_rate_limit_to_network_error():

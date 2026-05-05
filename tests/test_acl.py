@@ -133,3 +133,53 @@ def test_acl_provider_falls_back_to_plain_bibtex_export():
         "https://aclanthology.org/anthology.bib.gz",
     ]
     assert len(results) == 1
+
+
+def test_acl_provider_falls_back_to_plain_bibtex_export_on_transient_status():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if str(request.url).endswith("anthology+abstracts.bib.gz"):
+            return httpx.Response(503)
+        return httpx.Response(200, content=gzip.compress(ACL_BIB))
+
+    provider = AclAnthologyProvider(
+        base_url="https://aclanthology.org/",
+        transport=httpx.MockTransport(handler),
+        retries=0,
+    )
+
+    results = provider.search(SearchQuery(text="explaining nlp", limit=5))
+
+    assert seen == [
+        "https://aclanthology.org/anthology+abstracts.bib.gz",
+        "https://aclanthology.org/anthology.bib.gz",
+    ]
+    assert len(results) == 1
+
+
+def test_acl_provider_async_falls_back_to_plain_bibtex_export_on_transient_status():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if str(request.url).endswith("anthology+abstracts.bib.gz"):
+            return httpx.Response(503)
+        return httpx.Response(200, content=gzip.compress(ACL_BIB))
+
+    provider = AclAnthologyProvider(
+        base_url="https://aclanthology.org/",
+        transport=httpx.MockTransport(handler),
+        retries=0,
+    )
+
+    results = asyncio.run(
+        provider.search_async(SearchQuery(text="explaining nlp", limit=5))
+    )
+
+    assert seen == [
+        "https://aclanthology.org/anthology+abstracts.bib.gz",
+        "https://aclanthology.org/anthology.bib.gz",
+    ]
+    assert len(results) == 1

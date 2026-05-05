@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
@@ -127,7 +127,7 @@ def parse_arxiv_feed(xml_text: str, *, limit: int) -> list[SearchResult]:
     return results
 
 
-def text_of(element: ET.Element, path: str) -> str:
+def text_of(element: Any, path: str) -> str:
     child = element.find(path, ATOM_NS)
     if child is None or child.text is None:
         return ""

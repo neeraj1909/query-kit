@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-import xml.etree.ElementTree as ET
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 from query_cli.domain.errors import ProviderParseError, SearchNetworkError
 
@@ -78,7 +79,9 @@ class ProviderHttpClient:
             except httpx.RequestError as exc:
                 last_error = exc
                 if attempt >= self.retries:
-                    raise SearchNetworkError(str(exc)) from exc
+                    raise SearchNetworkError(
+                        describe_request_error(exc, method=method, url=absolute_url)
+                    ) from exc
                 self._sleep_before_retry(None, attempt)
                 continue
             if (
@@ -89,7 +92,9 @@ class ProviderHttpClient:
             self._sleep_before_retry(response, attempt)
 
         if last_error is not None:
-            raise SearchNetworkError(str(last_error)) from last_error
+            raise SearchNetworkError(
+                describe_request_error(last_error, method=method, url=absolute_url)
+            ) from last_error
         raise SearchNetworkError("request failed")
 
     def _wait_for_host(self, url: str) -> None:
@@ -274,7 +279,9 @@ class AsyncProviderHttpSession:
             except httpx.RequestError as exc:
                 last_error = exc
                 if attempt >= self._config.retries:
-                    raise SearchNetworkError(str(exc)) from exc
+                    raise SearchNetworkError(
+                        describe_request_error(exc, method=method, url=absolute_url)
+                    ) from exc
                 await self._config._sleep_before_retry(None, attempt)
                 continue
             if (
@@ -285,7 +292,9 @@ class AsyncProviderHttpSession:
             await self._config._sleep_before_retry(response, attempt)
 
         if last_error is not None:
-            raise SearchNetworkError(str(last_error)) from last_error
+            raise SearchNetworkError(
+                describe_request_error(last_error, method=method, url=absolute_url)
+            ) from last_error
         raise SearchNetworkError("request failed")
 
 
@@ -306,6 +315,21 @@ def build_headers(headers: Mapping[str, str] | None = None) -> dict[str, str]:
     if user_agent and not any(name.casefold() == "user-agent" for name in merged):
         merged["User-Agent"] = user_agent
     return merged
+
+
+def describe_request_error(exc: httpx.RequestError, *, method: str, url: str) -> str:
+    try:
+        request = exc.request
+    except RuntimeError:
+        request = None
+    request_method = request.method if request is not None else method
+    request_url = str(request.url) if request is not None else url
+    error_type = type(exc).__name__
+    detail = str(exc).strip()
+    message = f"{request_method} {request_url} failed with {error_type}"
+    if detail:
+        message = f"{message}: {detail}"
+    return message
 
 
 def ensure_success(response: httpx.Response) -> None:
@@ -333,8 +357,8 @@ def parse_json_response(response: httpx.Response) -> Any:
         raise ProviderParseError("invalid JSON response") from exc
 
 
-def parse_xml_text(xml_text: str) -> ET.Element:
+def parse_xml_text(xml_text: str) -> Any:
     try:
         return ET.fromstring(xml_text)
-    except ET.ParseError as exc:
+    except (ET.ParseError, DefusedXmlException) as exc:
         raise ProviderParseError("invalid XML response") from exc
