@@ -60,16 +60,7 @@ class SemanticScholarProvider:
         )
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
-        params = {
-            "query": query.text,
-            "limit": str(query.limit),
-            "fields": SEARCH_FIELDS,
-        }
-        if query.since_year is not None:
-            year_filter = f"{query.since_year}-"
-            params["year"] = year_filter
-            params["publicationDateOrYear"] = year_filter
-        response = self.http.get("paper/search", params=params)
+        response = self.http.get("paper/search", params=build_search_params(query))
         ensure_success(response)
         data = parse_json_response(response)
         return parse_semantic_scholar_results(
@@ -77,21 +68,31 @@ class SemanticScholarProvider:
         )
 
     async def search_async(self, query: SearchQuery) -> list[SearchResult]:
-        params = {
-            "query": query.text,
-            "limit": str(query.limit),
-            "fields": SEARCH_FIELDS,
-        }
-        if query.since_year is not None:
-            year_filter = f"{query.since_year}-"
-            params["year"] = year_filter
-            params["publicationDateOrYear"] = year_filter
-        response = await self.async_http.get("paper/search", params=params)
+        response = await self.async_http.get(
+            "paper/search", params=build_search_params(query)
+        )
         ensure_success(response)
         data = parse_json_response(response)
         return parse_semantic_scholar_results(
             data, limit=query.limit, since_year=query.since_year
         )
+
+
+def build_search_params(query: SearchQuery) -> dict[str, str]:
+    params = {
+        "query": semantic_scholar_query_text(query.text),
+        "limit": str(query.limit),
+        "fields": SEARCH_FIELDS,
+    }
+    if query.since_year is not None:
+        params["year"] = f"{query.since_year}-"
+        params["publicationDateOrYear"] = f"{query.since_year}:"
+    return params
+
+
+def semantic_scholar_query_text(value: str) -> str:
+    # Semantic Scholar docs say hyphenated query terms yield no matches.
+    return clean_text(value.replace("-", " "))
 
 
 def parse_semantic_scholar_results(

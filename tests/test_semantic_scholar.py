@@ -7,6 +7,7 @@ from query_cli.adapters.semantic_scholar import (
     parse_semantic_scholar_results,
 )
 from query_cli.domain import SearchQuery
+from query_cli.domain.errors import ProviderParseError
 
 
 SEMANTIC_SCHOLAR_JSON = {
@@ -45,6 +46,33 @@ def test_parse_semantic_scholar_results_normalizes_records():
     assert results[0].abstract == "A paper about explainable NLP."
 
 
+def test_parse_semantic_scholar_results_rejects_malformed_schema():
+    try:
+        parse_semantic_scholar_results({"total": 0}, limit=5)
+    except ProviderParseError as exc:
+        assert "malformed Semantic Scholar search response" in str(exc)
+    else:
+        raise AssertionError("expected malformed Semantic Scholar response to fail")
+
+
+def test_semantic_scholar_provider_maps_invalid_json_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="{", headers={"content-type": "application/json"})
+
+    provider = SemanticScholarProvider(
+        base_url="https://api.example.test/graph/v1/",
+        transport=httpx.MockTransport(handler),
+        min_interval=0,
+    )
+
+    try:
+        provider.search(SearchQuery(text="Hindi OCR", limit=3))
+    except ProviderParseError as exc:
+        assert "invalid JSON" in str(exc)
+    else:
+        raise AssertionError("expected invalid Semantic Scholar JSON to fail")
+
+
 def test_semantic_scholar_provider_requests_graph_search_with_filters():
     seen = {}
 
@@ -71,10 +99,29 @@ def test_semantic_scholar_provider_requests_graph_search_with_filters():
         "limit": "3",
         "fields": "title,authors,year,venue,abstract,url",
         "year": "2024-",
-        "publicationDateOrYear": "2024-",
+        "publicationDateOrYear": "2024:",
     }
     assert seen["api_key"] == "secret-key"
     assert len(results) == 1
+
+
+def test_semantic_scholar_provider_sanitizes_hyphenated_query_terms():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": []})
+
+    provider = SemanticScholarProvider(
+        base_url="https://api.example.test/graph/v1/",
+        transport=httpx.MockTransport(handler),
+        min_interval=0,
+    )
+
+    results = provider.search(SearchQuery(text="Hindi-OCR", limit=3))
+
+    assert seen["params"]["query"] == "Hindi OCR"
+    assert results == []
 
 
 def test_semantic_scholar_provider_async_requests_graph_search_with_filters():
@@ -105,7 +152,7 @@ def test_semantic_scholar_provider_async_requests_graph_search_with_filters():
         "limit": "3",
         "fields": "title,authors,year,venue,abstract,url",
         "year": "2024-",
-        "publicationDateOrYear": "2024-",
+        "publicationDateOrYear": "2024:",
     }
     assert seen["api_key"] == "secret-key"
     assert len(results) == 1

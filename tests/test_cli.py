@@ -248,3 +248,40 @@ def test_run_search_passes_environment_to_provider_registry(monkeypatch):
 
     assert code == EXIT_SUCCESS
     assert seen["environ"] is env
+
+
+def test_run_search_passes_timeout_to_service_deadline(monkeypatch):
+    from query_cli.domain import SearchResult
+
+    seen = {}
+
+    class FakeProvider:
+        provider_id = "pubmed"
+
+    def fake_get_search_providers(provider_ids, timeout, environ=None):
+        return [FakeProvider()]
+
+    def fake_search_research(query, providers, *, limit, since_year, provider_timeout):
+        seen["provider_timeout"] = provider_timeout
+        return [
+            SearchResult(
+                title="Paper title",
+                url="https://example.test/paper",
+                source="PubMed",
+            )
+        ]
+
+    monkeypatch.setattr("query_cli.cli.get_search_providers", fake_get_search_providers)
+    monkeypatch.setattr("query_cli.cli.search_research", fake_search_research)
+    stdout = StringIO()
+    stderr = StringIO()
+
+    code = run(
+        ["search", "xai driven nlp", "--provider", "pubmed", "--timeout", "7"],
+        stdout=stdout,
+        stderr=stderr,
+        environ={},
+    )
+
+    assert code == EXIT_SUCCESS
+    assert seen["provider_timeout"] == 7.0

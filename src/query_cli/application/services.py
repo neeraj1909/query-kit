@@ -22,6 +22,7 @@ def search_research(
     *,
     limit: int,
     since_year: int | None = None,
+    provider_timeout: float | None = None,
 ) -> list[SearchResult]:
     if _running_event_loop_exists():
         raise RuntimeError(
@@ -34,6 +35,7 @@ def search_research(
             providers,
             limit=limit,
             since_year=since_year,
+            provider_timeout=provider_timeout,
         )
     )
 
@@ -44,10 +46,14 @@ async def search_research_async(
     *,
     limit: int,
     since_year: int | None = None,
+    provider_timeout: float | None = None,
 ) -> list[SearchResult]:
     query = SearchQuery(text=query_text, since_year=since_year, limit=limit)
     provider_outcomes = await asyncio.gather(
-        *(_search_provider(provider, query) for provider in providers)
+        *(
+            _search_provider(provider, query, provider_timeout=provider_timeout)
+            for provider in providers
+        )
     )
 
     provider_result_sets: list[list[SearchResult]] = []
@@ -69,18 +75,36 @@ async def search_research_async(
 
 
 async def _search_provider(
-    provider: SearchProviderLike, query: SearchQuery
+    provider: SearchProviderLike,
+    query: SearchQuery,
+    *,
+    provider_timeout: float | None = None,
 ) -> list[SearchResult] | _ProviderFailure:
     try:
-        search_async = getattr(provider, "search_async", None)
-        if callable(search_async):
-            return await search_async(query)
-        search = getattr(provider, "search")
-        return await asyncio.to_thread(search, query)
+        search_coro = _call_provider(provider, query)
+        if provider_timeout is not None:
+            return await asyncio.wait_for(search_coro, timeout=provider_timeout)
+        return await search_coro
+    except TimeoutError:
+        return _ProviderFailure(
+            provider.provider_id,
+            f"timed out after {provider_timeout:g}s",
+            network_failure=True,
+        )
     except SearchNetworkError as exc:
         return _ProviderFailure(provider.provider_id, str(exc), network_failure=True)
     except Exception as exc:
         return _ProviderFailure(provider.provider_id, str(exc))
+
+
+async def _call_provider(
+    provider: SearchProviderLike, query: SearchQuery
+) -> list[SearchResult]:
+    search_async = getattr(provider, "search_async", None)
+    if callable(search_async):
+        return await search_async(query)
+    search = getattr(provider, "search")
+    return await asyncio.to_thread(search, query)
 
 
 def _running_event_loop_exists() -> bool:

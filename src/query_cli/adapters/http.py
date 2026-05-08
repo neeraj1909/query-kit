@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
@@ -333,11 +334,61 @@ def describe_request_error(exc: httpx.RequestError, *, method: str, url: str) ->
 
 
 def ensure_success(response: httpx.Response) -> None:
-    if response.status_code < 400:
+    waf_action = response.headers.get("x-amzn-waf-action")
+    if response.status_code < 400 and not waf_action:
         return
     if response.status_code == 429:
-        raise SearchNetworkError("rate limited by upstream provider (HTTP 429)")
-    raise SearchNetworkError(f"upstream provider returned HTTP {response.status_code}")
+        base_message = "rate limited by upstream provider (HTTP 429)"
+    else:
+        base_message = f"upstream provider returned HTTP {response.status_code}"
+    details = describe_http_response_details(response)
+    message = f"{base_message}; {details}" if details else base_message
+    raise SearchNetworkError(message)
+
+
+def describe_http_response_details(response: httpx.Response) -> str:
+    details: list[str] = []
+    for header_name in ("Retry-After", "x-amzn-errortype", "x-amzn-waf-action"):
+        value = response.headers.get(header_name)
+        if value:
+            details.append(f"{header_name.lower()}={clean_error_detail(value)}")
+
+    body_details = describe_error_body(response)
+    if body_details:
+        details.extend(body_details)
+    return "; ".join(details)
+
+
+def describe_error_body(response: httpx.Response) -> list[str]:
+    try:
+        body_text = response.text.strip()
+    except Exception:
+        return []
+    if not body_text:
+        return []
+
+    content_type = response.headers.get("content-type", "")
+    if "json" in content_type.casefold() or body_text.startswith(("{", "[")):
+        try:
+            data = json.loads(body_text)
+        except ValueError:
+            return [f"body={clean_error_detail(body_text)}"]
+        if isinstance(data, dict):
+            details = []
+            for key in ("message", "error", "detail", "code"):
+                value = data.get(key)
+                if isinstance(value, str | int | float | bool):
+                    details.append(f"{key}={clean_error_detail(str(value))}")
+            return details
+        return [f"body={clean_error_detail(body_text)}"]
+    return [f"body={clean_error_detail(body_text)}"]
+
+
+def clean_error_detail(value: str, *, max_length: int = 500) -> str:
+    cleaned = " ".join(value.split())
+    if len(cleaned) <= max_length:
+        return cleaned
+    return f"{cleaned[: max_length - 1]}…"
 
 
 def parse_retry_after(value: str | None) -> float | None:

@@ -234,6 +234,54 @@ def test_ensure_success_maps_rate_limit_to_network_error():
         ensure_success(httpx.Response(429))
 
 
+def test_ensure_success_includes_safe_json_error_details():
+    response = httpx.Response(
+        429,
+        json={
+            "message": "Too Many Requests. Please wait and try again.",
+            "code": "429",
+        },
+        headers={"x-amzn-errortype": "TooManyRequestsException"},
+    )
+
+    with pytest.raises(SearchNetworkError) as exc_info:
+        ensure_success(response)
+
+    message = str(exc_info.value)
+    assert "HTTP 429" in message
+    assert "Too Many Requests" in message
+    assert "code=429" in message
+    assert "x-amzn-errortype=TooManyRequestsException" in message
+
+
+def test_ensure_success_reports_waf_challenge_without_browser_spoofing():
+    response = httpx.Response(
+        202,
+        headers={"x-amzn-waf-action": "challenge"},
+    )
+
+    with pytest.raises(SearchNetworkError) as exc_info:
+        ensure_success(response)
+
+    message = str(exc_info.value)
+    assert "HTTP 202" in message
+    assert "x-amzn-waf-action=challenge" in message
+
+
+def test_ensure_success_includes_server_error_body_excerpt():
+    response = httpx.Response(
+        500,
+        json={"message": "temporary upstream failure"},
+    )
+
+    with pytest.raises(SearchNetworkError) as exc_info:
+        ensure_success(response)
+
+    message = str(exc_info.value)
+    assert "HTTP 500" in message
+    assert "temporary upstream failure" in message
+
+
 def test_parse_json_response_maps_malformed_json():
     with pytest.raises(ProviderParseError, match="invalid JSON"):
         parse_json_response(httpx.Response(200, text="{"))

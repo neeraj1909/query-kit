@@ -7,6 +7,7 @@ def test_get_search_providers_expands_all():
     assert [provider.provider_id for provider in providers] == [
         "acl",
         "arxiv",
+        "arxiv-web",
         "pubmed",
         "semantic-scholar",
         "openreview",

@@ -179,6 +179,46 @@ def test_search_research_async_continues_when_one_provider_fails():
     assert [result.title for result in results] == ["Paper"]
 
 
+def test_search_research_async_returns_partial_results_when_provider_times_out():
+    results = asyncio.run(
+        search_research_async(
+            "xai nlp",
+            [
+                AsyncFakeProvider("slow", delay=0.2),
+                AsyncFakeProvider(
+                    "ok",
+                    [
+                        SearchResult(
+                            title="Paper",
+                            url="https://example.test/paper",
+                            source="OK",
+                        )
+                    ],
+                ),
+            ],
+            limit=5,
+            provider_timeout=0.01,
+        )
+    )
+
+    assert [result.title for result in results] == ["Paper"]
+
+
+def test_search_research_async_marks_all_provider_timeouts_as_network_failures():
+    with pytest.raises(ProviderSearchError) as exc_info:
+        asyncio.run(
+            search_research_async(
+                "xai nlp",
+                [AsyncFakeProvider("slow", delay=0.2)],
+                limit=5,
+                provider_timeout=0.01,
+            )
+        )
+
+    assert exc_info.value.network_failure is True
+    assert "slow: timed out after 0.01s" in str(exc_info.value)
+
+
 def test_search_research_async_marks_all_network_failures():
     with pytest.raises(ProviderSearchError) as exc_info:
         asyncio.run(

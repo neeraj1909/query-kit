@@ -15,7 +15,15 @@ from .domain.errors import ProviderSearchError, SearchError, SearchNetworkError
 EXIT_SUCCESS = 0
 EXIT_USAGE = 1
 EXIT_NETWORK = 2
-PROVIDER_CHOICES = ("acl", "arxiv", "pubmed", "semantic-scholar", "openreview", "all")
+PROVIDER_CHOICES = (
+    "acl",
+    "arxiv",
+    "arxiv-web",
+    "pubmed",
+    "semantic-scholar",
+    "openreview",
+    "all",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,7 +111,11 @@ def run_search(
             providers_text = ", ".join(provider.provider_id for provider in providers)
             print(f"searching providers: {providers_text}", file=stderr)
         results = search_research(
-            args.query, providers, limit=args.limit, since_year=args.since_year
+            args.query,
+            providers,
+            limit=args.limit,
+            since_year=args.since_year,
+            provider_timeout=timeout,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=stderr)

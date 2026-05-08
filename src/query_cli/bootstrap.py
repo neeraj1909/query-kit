@@ -15,6 +15,7 @@ def get_search_providers(
 ) -> list[SearchProviderLike]:
     from query_cli.adapters.acl import AclAnthologyProvider
     from query_cli.adapters.arxiv import ArxivProvider
+    from query_cli.adapters.arxiv_web import ArxivWebProvider
     from query_cli.adapters.openreview import OpenReviewProvider
     from query_cli.adapters.pubmed import PubMedProvider
     from query_cli.adapters.semantic_scholar import SemanticScholarProvider
@@ -27,6 +28,7 @@ def get_search_providers(
     registry: dict[str, SearchProviderLike] = {
         "acl": AclAnthologyProvider(timeout=timeout),
         "arxiv": ArxivProvider(timeout=timeout),
+        "arxiv-web": ArxivWebProvider(timeout=timeout),
         "pubmed": PubMedProvider(
             timeout=timeout,
             api_key=env_value("QUERY_CLI_NCBI_API_KEY"),
