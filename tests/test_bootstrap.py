@@ -10,6 +10,7 @@ def test_get_search_providers_expands_all():
         "arxiv-web",
         "pubmed",
         "semantic-scholar",
+        "semantic-scholar-web",
         "openreview",
     ]
 

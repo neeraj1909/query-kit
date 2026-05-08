@@ -80,10 +80,16 @@ Search PubMed directly:
 query-cli search "explainable NLP" --provider pubmed --limit 5
 ```
 
-Search Semantic Scholar directly:
+Search Semantic Scholar directly through the official Graph API:
 
 ```bash
 query-cli search "explainable NLP" --provider semantic-scholar --limit 5
+```
+
+Search Semantic Scholar's public web search endpoint as an ordinary-HTTP browser-as-API probe:
+
+```bash
+query-cli search "Hindi OCR" --provider semantic-scholar-web --limit 5
 ```
 
 Search OpenReview directly:
@@ -163,7 +169,7 @@ The CLI passes through these phases:
 
 1. **Parse command**: `argparse` reads the query text, provider names, limit, timeout, format, and verbose flag.
 2. **Resolve configuration**: the CLI resolves `--timeout` or `QUERY_CLI_TIMEOUT`, then defaults to `30` seconds if neither is set.
-3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, `pubmed`, `semantic-scholar`, `openreview`, or `all` to concrete provider adapters.
+3. **Select providers**: `src/query_cli/bootstrap.py` maps provider names such as `acl`, `arxiv`, `pubmed`, `semantic-scholar`, `semantic-scholar-web`, `openreview`, or `all` to concrete provider adapters.
 4. **Build domain query**: the application service creates a `SearchQuery` with the keyword text, optional `--since-year`, and result limit, then validates that the query is not empty and the limit is positive.
 5. **Call provider adapters**: each selected adapter performs provider-specific HTTP and parsing work. The sync CLI enters one service-level event loop, then the service runs async-capable providers concurrently while preserving provider order for merging:
    - `acl` downloads ACL Anthology's public BibTeX export with abstracts and matches query terms against paper metadata.
@@ -171,6 +177,7 @@ The CLI passes through these phases:
    - `arxiv-web` calls arXiv's public HTML search page with ordinary HTTP and parses visible result metadata/full abstracts where the page provides them.
    - `pubmed` calls NCBI E-utilities ESearch and EFetch for PubMed records.
    - `semantic-scholar` calls the Semantic Scholar Graph API paper search endpoint.
+   - `semantic-scholar-web` calls the public Semantic Scholar web search endpoint with ordinary HTTP and parses the browser-visible JSON response when the endpoint is not WAF-challenged.
    - `openreview` calls the OpenReview API 2 notes search endpoint.
 6. **Normalize results**: provider-specific records are converted into shared `SearchResult` objects with fields such as title, URL, source, authors, year, venue, and abstract.
 7. **Merge and deduplicate**: the service merges results from all selected providers, deduplicates by normalized title/link, and applies the global `--limit`.
@@ -187,6 +194,7 @@ Provider failures are isolated. If one provider fails but another returns result
 | `arxiv-web` | Supported | Browser-as-API style provider over arXiv's public HTML search page using normal HTTP. Useful fallback when the Atom API is rate-limited; preserves full public abstracts present in the page. |
 | `pubmed` | Supported | Searches PubMed through NCBI E-utilities. Best for biomedical and clinical NLP queries. |
 | `semantic-scholar` | Supported | Searches Semantic Scholar's official Graph API. Best for broad academic metadata. |
+| `semantic-scholar-web` | Conditional | Browser-as-API style provider over Semantic Scholar's public web search endpoint using normal HTTP. It preserves public abstracts/TLDRs when available, but Semantic Scholar may WAF-challenge non-browser HTTP; query-kit reports that as a provider limitation instead of bypassing it. |
 | `openreview` | Supported | Searches public OpenReview API 2 notes. Best for ML conference and workshop submissions visible through public search. |
 
 ## Provider Notes
@@ -197,12 +205,12 @@ Provider failures are isolated. If one provider fails but another returns result
 - `--timeout` applies per provider request.
 - Use `--verbose` to print selected providers and result counts to stderr.
 - `arxiv` and `arxiv-web` enforce a 3-second minimum interval between repeated arXiv requests in the same process.
-- `arxiv-web` is the safe browser-as-API pattern: ordinary HTTP over a public search page, no cdp/Chrome dependency, no copied cookies, and no forged browser headers. Set `QUERY_CLI_USER_AGENT` to your project-specific User-Agent if needed.
+- `arxiv-web` and `semantic-scholar-web` are the safe browser-as-API pattern: ordinary HTTP over public pages/endpoints, no cdp/Chrome runtime dependency, no copied cookies/auth headers, and no forged browser fingerprint headers. Set `QUERY_CLI_USER_AGENT` to your project-specific User-Agent if needed.
 - `pubmed` enforces NCBI's default 3 requests/second limit without an API key and 10 requests/second with an API key.
 - NCBI asks software developers to register a tool name and email with NCBI; passing `QUERY_CLI_NCBI_TOOL` and `QUERY_CLI_NCBI_EMAIL` is not a substitute for registration.
 - `semantic-scholar` may return HTTP 429 without an API key. Set `QUERY_CLI_SEMANTIC_SCHOLAR_API_KEY` if you have one. Error messages include safe upstream diagnostics such as JSON `message`/`code`, `Retry-After`, `x-amzn-errortype`, or `x-amzn-waf-action` when present.
 - `semantic-scholar` queries replace hyphens with spaces before calling the Graph API because the official docs say hyphenated query terms yield no matches.
-- Browser-observed Semantic Scholar web XHRs are not used as a runtime fallback when they require browser state or WAF challenge handling. Query-kit does not depend on Chrome, cdp, copied cookies, or spoofed browser headers.
+- `semantic-scholar-web` uses the browser-observed public search payload shape, but only through ordinary HTTP. If Semantic Scholar returns `x-amzn-waf-action: challenge` to non-browser HTTP, query-kit surfaces that safe diagnostic and relies on other providers for partial results; it does not copy browser cookies or try to bypass the challenge.
 - `openreview` uses API 2 public search. Older API 1 venue-specific retrieval is not implemented in this generic search adapter.
 - The HTTP client only sends a custom User-Agent when `QUERY_CLI_USER_AGENT` is set.
 
@@ -231,6 +239,7 @@ query-cli search "explainable nlp" --provider arxiv --limit 2 --format json
 query-cli search "Devanagari OCR" --provider arxiv-web --limit 2 --format json
 query-cli search "explainable nlp" --provider pubmed --limit 2 --format json
 query-cli search "explainable nlp" --provider semantic-scholar --limit 2 --format json
+query-cli search "Hindi OCR" --provider semantic-scholar-web --limit 2 --format json
 query-cli search "explainable nlp" --provider openreview --limit 2 --format json
 query-cli search "explainable nlp" --provider all --limit 10 --format json
 ```

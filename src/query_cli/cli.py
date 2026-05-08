@@ -21,6 +21,7 @@ PROVIDER_CHOICES = (
     "arxiv-web",
     "pubmed",
     "semantic-scholar",
+    "semantic-scholar-web",
     "openreview",
     "all",
 )

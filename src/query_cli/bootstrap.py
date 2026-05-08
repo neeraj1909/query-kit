@@ -19,6 +19,7 @@ def get_search_providers(
     from query_cli.adapters.openreview import OpenReviewProvider
     from query_cli.adapters.pubmed import PubMedProvider
     from query_cli.adapters.semantic_scholar import SemanticScholarProvider
+    from query_cli.adapters.semantic_scholar_web import SemanticScholarWebProvider
 
     def env_value(name: str) -> str | None:
         if environ is None:
@@ -39,6 +40,7 @@ def get_search_providers(
             timeout=timeout,
             api_key=env_value("QUERY_CLI_SEMANTIC_SCHOLAR_API_KEY"),
         ),
+        "semantic-scholar-web": SemanticScholarWebProvider(timeout=timeout),
         "openreview": OpenReviewProvider(timeout=timeout),
     }
     requested = list(provider_ids)
